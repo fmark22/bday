@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "source": "Original parametric geometry; no external model data",
+  "characters": {
+    "king": {
+      "file": "king.glb",
+      "bytes": 822416,
+      "meshes": 25,
+      "triangles": 30400
+    },
+    "steward": {
+      "file": "steward.glb",
+      "bytes": 605884,
+      "meshes": 23,
+      "triangles": 22248
+    },
+    "scholar": {
+      "file": "scholar.glb",
+      "bytes": 750624,
+      "meshes": 24,
+      "triangles": 27812
+    },
+    "guard": {
+      "file": "guard.glb",
+      "bytes": 750340,
+      "meshes": 26,
+      "triangles": 27660
+    },
+    "bard": {
+      "file": "bard.glb",
+      "bytes": 833840,
+      "meshes": 28,
+      "triangles": 30936
+    }
+  },
+  "gifts": {
+    "flowers": {
+      "file": "flowers.glb",
+      "bytes": 618376,
+      "meshes": 5,
+      "triangles": 23592
+    },
+    "ribbon": {
+      "file": "ribbon.glb",
+      "bytes": 20812,
+      "meshes": 1,
+      "triangles": 484
+    },
+    "cape": {
+      "file": "cape.glb",
+      "bytes": 613404,
+      "meshes": 3,
+      "triangles": 23664
+    },
+    "glasses": {
+      "file": "glasses.glb",
+      "bytes": 30448,
+      "meshes": 1,
+      "triangles": 1128
+    }
+  }
+}

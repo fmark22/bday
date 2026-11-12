@@ -1,0 +1,33 @@
+{
+  "name": "royal-birthday",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "server": "node server/index.js",
+    "build": "vite build",
+    "test": "node server/gifts.test.js && node tools/models.test.mjs && node tools/audio.test.mjs",
+    "build:models": "node tools/build-models.mjs",
+    "build:brand": "node tools/build-brand.mjs",
+    "start": "node server/index.js",
+    "test:deploy": "node tools/deploy-smoke.mjs"
+  },
+  "dependencies": {
+    "@react-three/fiber": "^9.0.0",
+    "@react-three/drei": "^10.0.0",
+    "@react-three/postprocessing": "^3.0.0",
+    "three": "^0.175.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "vite": "^6.2.0"
+  },
+  "engines": {
+    "node": "22.x"
+  }
+}

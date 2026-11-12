@@ -1,0 +1,14 @@
+{
+  "name": "생일 전하",
+  "short_name": "생일 전하",
+  "description": "오늘은 당신이 왕이 되는 날. 친구들과 선물을 나누는 3D 생일파티.",
+  "lang": "ko",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#30231a",
+  "theme_color": "#61303a",
+  "icons": [
+    { "src": "/crown-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/crown-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

@@ -1,59 +1,47 @@
-import {drawGuestAvatar,GUEST_AVATARS,findAvatar} from '../shared/avatars.js';
-import {readFileSync} from 'node:fs';
-import vm from 'node:vm';
 import assert from 'node:assert/strict';
-import {findGift} from '../shared/gifts.js';
-let onConnection;const snapshots=[],events=[],rooms=new Map();
-const io={on(event,handler){onConnection=handler},to(room){return {emit(event,payload){events.push({room,event,payload});if(event==='state')snapshots.push({room,payload})}}}};
-let source=readFileSync(new URL('./index.js',import.meta.url),'utf8');source=source.slice(source.indexOf('const MAX_GUESTS'),source.indexOf("app.get('/health'"));
-vm.runInNewContext(source,{io,rooms,findGift,drawGuestAvatar,findAvatar,Date,console});
-function client(id){const handlers={};const socket={id,data:{},on(event,handler){handlers[event]=handler},join(){}};onConnection(socket);return {send(event,payload={}){let reply;handlers[event](payload,res=>reply=res);return reply}}}
-const guest=client('guest'),hero=client('hero'),other=client('other');
-assert.ok(guest.send('join',{roomId:'party',name:'Guest',role:'guest',gift:'invalid'}).error);
-assert.equal(guest.send('join',{roomId:'party',name:'Guest',role:'guest',gift:'flowers'}).ok,true);
-assert.ok(guest.send('giveGift').error,'Cannot gift before hero arrives');
-assert.equal(hero.send('join',{roomId:'party',name:'Hero',role:'hero'}).ok,true);
-assert.ok(guest.send('claimHero').error,'Cannot steal existing hero role');
-assert.ok(hero.send('giveGift').error,'Hero cannot give gifts');
-assert.equal(guest.send('giveGift').ok,true);assert.equal(rooms.get('party').outfit.hand,'flowers');
-assert.equal(rooms.get('party').gifts.length,1);assert.ok(guest.send('giveGift').error,'One delivery per guest');
-assert.ok(guest.send('toggleGift',{item:'flowers'}).error,'Guests cannot change wardrobe');
-assert.ok(hero.send('toggleGift',{item:'cape'}).error,'Unreceived items cannot be equipped');
-assert.equal(hero.send('toggleGift',{item:'flowers'}).ok,true);assert.equal(rooms.get('party').outfit.hand,undefined);
-assert.equal(hero.send('toggleGift',{item:'flowers'}).ok,true);assert.equal(rooms.get('party').outfit.hand,'flowers');
-assert.equal(other.send('join',{roomId:'elsewhere',name:'Other',role:'guest',gift:'cape'}).ok,true);
-assert.equal(Object.keys(rooms.get('elsewhere').outfit).length,0,'Wardrobe is room scoped');
-assert.equal(other.send('claimHero').ok,true,'Guest can claim vacant hero role');
-assert.equal(rooms.get('elsewhere').players.get('other').role,'hero');
-assert.equal(rooms.get('party').players.get('hero').name,'오늘의 왕');
-assert.equal(rooms.get('elsewhere').players.get('other').name,'오늘의 왕','Hero conversion updates name');
-hero.send('reset');assert.equal(rooms.get('party').outfit.hand,'flowers','Replay keeps received gifts');
-const newcomer=client('new');assert.equal(newcomer.send('join',{roomId:'party',name:'New',gift:'ribbon'}).ok,true);
-assert.equal(snapshots.at(-1).payload.outfit.hand,'flowers','Late join receives wardrobe');
-assert.ok(newcomer.send('join',{roomId:'elsewhere',gift:'ribbon'}).error,'A socket cannot join twice');
-console.log('PASS: selection validation, guest-first, delivery, duplicate prevention, wardrobe permissions, room isolation, hero claim, replay and late-join state.');
-
-const avatarRoom={};let previous;
-for(let batch=0;batch<50;batch++){
- const drawn=Array.from({length:4},()=>drawGuestAvatar(avatarRoom));
- assert.equal(new Set(drawn).size,4,'Every shuffled group has four unique characters');
- assert.notEqual(drawn[0],previous,'Adjacent batches do not repeat a character');
- drawn.forEach(id=>assert.ok(GUEST_AVATARS.some(a=>a.id===id)));
- previous=drawn.at(-1);
+import {command,publicState,LEASE_MS} from './party-engine.js';
+import {MemoryRoomStore} from './room-store.js';
+import {findAvatar,GUEST_AVATARS,drawGuestAvatar} from '../shared/avatars.js';
+const store=new MemoryRoomStore();let now=100000;
+const contexts=new Map();
+async function send(connectionId,event,payload={},roomId='party'){
+ const context=contexts.get(connectionId)||{connectionId,roomId};context.now=now;now+=20;
+ const result=await store.transact(roomId,room=>command(room,event,payload,context));
+ if(event==='join'&&result.reply.ok){context.playerId=result.playerId;context.alreadyJoined=true;contexts.set(connectionId,context)}
+ return result;
 }
-const guestAvatar=rooms.get('party').players.get('guest').avatar;
-assert.ok(GUEST_AVATARS.some(a=>a.id===guestAvatar));
-assert.equal(rooms.get('party').players.get('hero').avatar,'king');
-assert.equal(rooms.get('elsewhere').players.get('other').avatar,'king','Claiming hero replaces guest appearance');
-assert.equal(snapshots.at(-1).payload.players.find(p=>p.id==='guest').avatar,guestAvatar,'Broadcast carries assigned appearance');
-const partyAvatars=[];
-for(let i=0;i<4;i++){
- const c=client('avatar-'+i);assert.equal(c.send('join',{roomId:'avatars',name:'Guest',gift:'flowers',avatar:'king'}).ok,true);
- partyAvatars.push(rooms.get('avatars').players.get('avatar-'+i).avatar);
-}
-assert.equal(new Set(partyAvatars).size,4,'Joining guests receive one of each per shuffled group');
-assert.ok(!partyAvatars.includes('king'),'Client cannot choose an unauthorized appearance');
-console.log('PASS: shuffled avatar groups, batch boundary, server allocation, broadcast identity and hero conversion.');
-
-for(const room of rooms.values())for(const player of room.players.values()){assert.equal(player.name,player.role==='hero'?'오늘의 왕':findAvatar(player.avatar).name,'Server chooses the character name, ignoring supplied nickname');}
-console.log('PASS: automatic character names, exact role labels and hero conversion.');
+assert.ok((await send('guest','join',{gift:'invalid'})).reply.error);
+const guest=await send('guest','join',{gift:'flowers',avatar:'king',name:'Custom'});assert.equal(guest.reply.ok,true);
+assert.equal(guest.snapshot.players[0].name,findAvatar(guest.snapshot.players[0].avatar).name);
+assert.ok((await send('guest','giveGift')).reply.error);
+const hero=await send('hero','join',{role:'hero'});assert.equal(hero.reply.ok,true);
+assert.ok((await send('second-hero','join',{role:'hero'})).reply.error);
+assert.ok((await send('guest','claimHero')).reply.error);
+assert.ok((await send('hero','giveGift')).reply.error);
+assert.equal((await send('guest','giveGift')).reply.ok,true);
+assert.ok((await send('guest','giveGift')).reply.error);
+assert.ok((await send('guest','toggleGift',{item:'flowers'})).reply.error);
+assert.ok((await send('hero','toggleGift',{item:'cape'})).reply.error);
+assert.equal((await send('hero','toggleGift',{item:'flowers'})).snapshot.outfit.hand,undefined);
+assert.equal((await send('hero','toggleGift',{item:'flowers'})).snapshot.outfit.hand,'flowers');
+assert.equal((await send('hero','start')).snapshot.phase,'walking');
+assert.ok((await send('hero','move',{z:-7})).reply.error,'Teleport rejected');
+for(let z=9.3;z>=-7;z-=.7){now+=250;await send('hero','move',{z})}
+assert.equal((await send('hero','sit')).snapshot.phase,'seated');
+assert.equal((await send('hero','crown')).snapshot.phase,'celebration');
+assert.equal((await send('hero','reset')).snapshot.outfit.hand,'flowers');
+await send('guest','disconnect');
+const resumed=await send('new-connection','join',{sessionToken:guest.reply.sessionToken});
+assert.equal(resumed.reply.id,guest.reply.id);assert.equal(resumed.snapshot.players.find(p=>p.id===guest.reply.id).giftGiven,true);
+assert.ok((await send('guest','chat',{text:'stale connection'})).reply.error);
+const json=JSON.stringify(resumed.snapshot);assert.ok(!json.includes(guest.reply.sessionToken),'Session token is private');assert.ok(!json.includes('connectionId'));
+assert.ok((await send('new-connection','join',{gift:'ribbon'})).reply.error);
+const other=await send('other','join',{gift:'cape'},'elsewhere');assert.equal(Object.keys(other.snapshot.outfit).length,0);
+assert.equal((await send('other','claimHero',{},'elsewhere')).snapshot.players[0].name,'오늘의 왕');
+const others=await Promise.all(Array.from({length:4},(_,i)=>send('avatar-'+i,'join',{gift:'ribbon'},'avatars')));
+assert.equal(new Set(others.map(r=>r.snapshot.players.find(p=>p.id===r.reply.id).avatar)).size,4);
+const race=await Promise.all(Array.from({length:8},(_,i)=>send('race-'+i,'join',{role:'hero'},'race')));
+assert.equal(race.filter(r=>r.reply.ok).length,1,'Only one hero wins a concurrent join');
+let previous;const bag={};for(let i=0;i<50;i++){const drawn=Array.from({length:4},()=>drawGuestAvatar(bag));assert.equal(new Set(drawn).size,4);assert.notEqual(drawn[0],previous);previous=drawn.at(-1)}
+now+=LEASE_MS+1;const fresh=await send('fresh','join',{gift:'flowers'});assert.equal(fresh.snapshot.players.length,1);assert.equal(fresh.snapshot.gifts.length,0);
+await store.close();console.log('PASS: room commands, concurrent hero allocation, gifts, avatar names, private sessions, reconnect, stale connections, movement checks, room isolation and lease expiry.');

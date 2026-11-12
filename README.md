@@ -71,32 +71,23 @@ npm run dev
 
 ## 배포
 
-웹 화면은 **Vercel**, 실시간 서버는 **별도 Node.js 호스팅**에 배포합니다. 두 서비스가 같은 Git 저장소를 사용하며, 프로젝트 루트를 기준으로 설치합니다.
+웹과 실시간 API를 **Vercel 한 프로젝트**에 배포하고, **Upstash Redis**로 방 상태를 공유합니다.
+별도 실시간 서버 주소는 필요하지 않습니다. Vercel Storage에서 Redis를 한 번 연결하면 이후에는 Git push로 배포할 수 있습니다.
 
-| 설정 | 웹 — Vercel | 실시간 서버 |
-| --- | --- | --- |
-| 설치·빌드 | `npm ci` → `npm run build` | `npm ci --omit=dev` |
-| 실행·출력 | `dist` | `npm start` |
-| Node.js | 22.x | 22.x |
-| 상태 확인 | 웹 주소 접속 | `GET /health` → `{"ok":true}` |
+| 설정 | 값 |
+| --- | --- |
+| 설치 | `npm ci` |
+| 빌드 | `npm run build` |
+| 출력 | `dist` |
+| 서버 환경변수 | `REDIS_URL` 또는 `KV_URL` — Upstash TCP 연결 URL |
+| API 상태 확인 | `/api/socket-io/health` |
 
-### 환경변수
+Redis 연결 정보는 Vercel에서 서버 환경변수로 주입합니다. 웹에 노출되는 `VITE_` 변수로 넣지 않습니다.
+기존 분리 배포용 `VITE_SOCKET_URL`이 설정되어 있다면 제거한 뒤 재배포하세요.
+Vercel 환경에서 Redis 연결이 없으면 API가 시작하지 않습니다.
 
-| 변수 | 설정 위치 | 값 |
-| --- | --- | --- |
-| `VITE_SOCKET_URL` | Vercel | 실시간 서버의 HTTPS 주소 |
-| `CLIENT_ORIGIN` | 서버 호스팅 | Vercel 웹의 HTTPS 주소 |
-| `NODE_ENV` | 서버 호스팅 | `production` |
-| `PORT` | 서버 호스팅 | 호스팅에서 제공하는 포트. 생략하면 `3001` |
-
-예시는 [.env.example](./.env.example)에 있습니다. 실제 값은 각 호스팅의 환경변수에 입력하세요. Node 서버는 `.env` 파일을 자동으로 읽지 않습니다.
-
-- 주소에는 `/socket.io` 경로나 `?room=...`을 붙이지 않습니다.
-- `VITE_SOCKET_URL`은 빌드할 때 포함됩니다. 변경 후 Vercel에서 다시 배포해야 합니다.
-- `CLIENT_ORIGIN`에 여러 웹 주소를 허용하려면 쉼표로 구분합니다. Vercel Preview 주소는 자동으로 허용하지 않습니다.
-- 방 상태는 메모리에 있으므로 서버는 **인스턴스 1개**로 운영합니다.
-
-Vercel 설정은 [vercel.json](./vercel.json)에 있습니다. 서버 연결과 배포 후 확인 순서는 [배포 안내](./DEPLOYMENT.md)를 참고하세요.
+여러 실행 인스턴스가 Redis로 방과 이벤트를 공유합니다. Function 실행 시간이 끝나 연결이 끊겨도 60초 안에 다시 연결하면 역할과 선물 상태를 복원합니다.
+연결 방법과 검증 절차는 [배포 안내](./DEPLOYMENT.md)를 참고하세요.
 
 ## 개발 명령
 
@@ -106,7 +97,7 @@ Vercel 설정은 [vercel.json](./vercel.json)에 있습니다. 서버 연결과 
 | `npm run server` / `npm start` | 실시간 서버 실행 |
 | `npm run build` | 웹 프로덕션 빌드 |
 | `npm test` | 방·선물·캐릭터 배정·GLB 모델·오디오 처리 검증 |
-| `npm run test:deploy` | 로컬 서버와 실제 WebSocket 클라이언트 두 개로 연결·동기화·허용 도메인 검증 |
+| `npm run test:deploy` | 서버 두 개와 실제 WebSocket 클라이언트로 동기화·재접속 검증 |
 | `npm run build:models` | 캐릭터 5종과 선물 4종의 GLB 재생성 |
 | `npm run build:brand` | 왕관 파비콘과 앱 아이콘 재생성 |
 
@@ -117,13 +108,15 @@ Vercel 설정은 [vercel.json](./vercel.json)에 있습니다. 서버 연결과 
 - **웹:** React 19, Vite 6
 - **3D:** Three.js, React Three Fiber, Drei
 - **실시간 통신:** Socket.IO
-- **서버:** Node.js, Express
+- **서버:** Node.js, Express, Vercel Functions
+- **공유 상태:** Redis (ioredis), Lua 원자 처리, Pub/Sub
 - **오디오:** Web Audio API
 - **글꼴:** 고운돋움. 폰트와 [SIL Open Font License](./public/fonts/OFL-GowunDodum.txt)를 프로젝트에 포함합니다.
 
 ```text
 client/            화면, 3D 공간, 캐릭터, 오디오
-server/            방 상태와 Socket.IO 이벤트
+api/               Vercel 실시간 API 진입점
+server/            게임 규칙, Socket.IO 서버, Redis·메모리 저장소
 shared/            캐릭터·선물 정의, 체험 화면의 상태 처리
 public/models/     캐릭터 5종과 선물 4종 GLB
 public/images/     선물 선택 카드 이미지
@@ -135,8 +128,8 @@ tools/             모델·아이콘 제작 스크립트와 검증 도구
 
 ## 현재 제한사항
 
-- **데이터를 영구 저장하지 않습니다.** 서버 재시작·재배포 또는 마지막 참가자 퇴장 시 방·채팅·선물이 사라집니다.
-- 재접속 시 이전 캐릭터·역할·선물 전달 상태를 자동 복구하지 않습니다.
+- **데이터를 영구 저장하지 않습니다.** 로컬 메모리 모드는 서버 종료 시 초기화됩니다. Vercel Redis 모드는 마지막 갱신 후 6시간 동안 보관하며, 유효 참가자가 모두 사라진 방에 다시 입장하면 새 파티를 만듭니다.
+- 같은 브라우저 탭에서 60초 내 재접속하면 이전 캐릭터·역할·선물 상태를 복구합니다. 유효 시간이 지난 세션이나 브라우저 탭 간 복구는 보장하지 않습니다.
 - 주인공은 사용자가 선택합니다. 별도 인증이나 전용 초대 코드는 없으며, 먼저 주인공으로 들어온 한 명을 인정합니다.
 - 채팅은 방별 최근 50개 메시지만 보관합니다. 신고·차단 기능은 아직 없습니다.
 - 디자인 시안과 선물 카드 이미지는 생성 이미지입니다. 실제 게임은 시안을 참고해 만든 GLB 모델을 사용하며, 세부 표현에는 차이가 있습니다.

@@ -3,7 +3,10 @@ import {createPartyAudio} from './audio.js';
 import CharacterStudio from './CharacterStudio.jsx';
 import React,{useEffect,useRef,useState,Suspense} from 'react';import{createRoot}from'react-dom/client';import{Canvas}from'@react-three/fiber';import{io}from'socket.io-client';import Palace from './Palace.jsx';import GiftIcon from './GiftIcon.jsx';import {GIFTS} from '../shared/gifts.js';import './style.css';
 const DEMO=new URLSearchParams(location.search).has('demo');
-const socket=io(import.meta.env.VITE_SOCKET_URL||undefined,{autoConnect:false});
+const externalSocket=import.meta.env.VITE_SOCKET_URL;
+const socket=io(externalSocket||undefined,{autoConnect:false,transports:['websocket'],path:externalSocket||import.meta.env.DEV?'/socket.io':'/api/socket-io/socket.io'});
+function readSession(room){try{return sessionStorage.getItem('bday:session:'+room)||undefined}catch{return undefined}}
+function saveSession(room,token){try{sessionStorage.setItem('bday:session:'+room,token)}catch{}}
 class SceneBoundary extends React.Component{constructor(props){super(props);this.state={failed:false}}static getDerivedStateFromError(){return {failed:true}}componentDidCatch(error){console.error('3D scene could not load',error)}render(){return this.state.failed?<div className="render-error" role="alert"><p>왕궁을 불러오지 못했어요.</p><button onClick={()=>location.reload()}>다시 불러오기</button></div>:this.props.children}}
 const PREVIEW_PLAYERS=[{id:'preview-hero',role:'hero',name:'오늘의 주인공',slot:-1,z:-7.65},...[0,1,2,3,4,5].map(slot=>({id:'preview-'+slot,role:'guest',name:'',slot,z:0}))];
 function App(){
@@ -14,7 +17,7 @@ function App(){
  const [targetZ,setTargetZ]=useState(null),[clapping,setClapping]=useState({}),[messages,setMessages]=useState([]),[draft,setDraft]=useState('');
  const [chatOpen,setChatOpen]=useState(false),[wardrobeOpen,setWardrobeOpen]=useState(false);
  const [notice,setNotice]=useState(''),[busy,setBusy]=useState(false),[confetti,setConfetti]=useState(false),[muted,setMuted]=useState(false);
- const stateRef=useRef(state),musicRef=useRef(null),mutedRef=useRef(false),playedRef=useRef(false),timers=useRef([]),chatBottom=useRef(null);stateRef.current=state;
+ const stateRef=useRef(state),musicRef=useRef(null),mutedRef=useRef(false),playedRef=useRef(false),timers=useRef([]),chatBottom=useRef(null),resumeRef=useRef(null);stateRef.current=state;
  const me=state.players.find(p=>p.id===id),hero=state.players.find(p=>p.role==='hero'),role=me?.role||'guest';
  const unlockAudio=async()=>{try{if(!musicRef.current)musicRef.current=createPartyAudio();if(!musicRef.current)throw Error('Unsupported audio');await musicRef.current.resume();return musicRef.current}catch{mutedRef.current=true;setMuted(true);setNotice('소리를 재생하지 못했어요. 브라우저의 사이트 소리 권한을 확인하고 다시 켜 주세요.');return null}};
  const toggleSound=async()=>{const next=!mutedRef.current;mutedRef.current=next;setMuted(next);if(next){musicRef.current?.setMuted(true);return}const audio=await unlockAudio();if(!audio||mutedRef.current)return;audio.setMuted(false);audio.startAmbient();if(stateRef.current.phase==='celebration')playBirthday()};
@@ -31,14 +34,18 @@ function App(){
  useEffect(()=>{const t=setTimeout(()=>setEntryStep('gift'),1400);return()=>clearTimeout(t)},[]);
  useEffect(()=>{
   if(DEMO)return()=>{timers.current.forEach(clearTimeout);musicRef.current?.close()};
-  const onState=s=>{stateRef.current=s;setState(s);if(s.phase==='celebration')playBirthday()};
-  const onChat=m=>setMessages(old=>[...old,m].slice(-50));
+  const onState=s=>{const current=stateRef.current;if(current.epoch===s.epoch&&current.version>=s.version)return;stateRef.current=s;setState(s);if(s.messages)setMessages(s.messages);if(s.phase==='celebration')playBirthday()};
+  const onChat=m=>setMessages(old=>old.some(item=>item.id===m.id)?old:[...old,m].slice(-50));
   const onClap=({id})=>{musicRef.current?.clap();setClapping(c=>({...c,[id]:true}));later(()=>setClapping(c=>({...c,[id]:false})),700)};
-  const onCelebrate=()=>{playBirthday();setConfetti(true);later(()=>setConfetti(false),8000)};
-  const onReset=()=>{playedRef.current=false;setConfetti(false);setTargetZ(null);musicRef.current?.stopBirthday()};
-  const onDisconnect=()=>{musicRef.current?.stopAmbient();musicRef.current?.stopBirthday();playedRef.current=false;setJoined(false);setJoining(false);setEntryStep('gift');setNotice('연결이 끊겼어요. 선물을 확인하고 다시 입장해 주세요.')};
+  const onCelebrate=event=>{if(event?.version<stateRef.current.version||stateRef.current.phase!=='celebration')return;playBirthday();setConfetti(true);later(()=>setConfetti(false),8000)};
+  const onReset=()=>{if(stateRef.current.phase!=='waiting')return;playedRef.current=false;setConfetti(false);setTargetZ(null);musicRef.current?.stopBirthday()};
+  const onDisconnect=()=>{musicRef.current?.stopAmbient();setNotice('연결을 다시 이어가고 있어요…')};
+  const onConnect=()=>{const saved=resumeRef.current;if(!saved)return;socket.timeout(8000).emit('join',saved,(err,res)=>{if(err||!res?.ok){resumeRef.current=null;setJoined(false);setEntryStep('gift');setNotice(res?.error||'다시 입장해 주세요.');return}setId(res.id);onState(res.state);setNotice('다시 연결했어요.');if(!mutedRef.current){musicRef.current?.setMuted(false);musicRef.current?.startAmbient()}})};
+  const heartbeat=setInterval(()=>{if(socket.connected&&resumeRef.current)socket.emit('heartbeat',{})},20000);
+  socket.on('connect',onConnect);
+
   socket.on('state',onState);socket.on('chat',onChat);socket.on('clap',onClap);socket.on('celebrate',onCelebrate);socket.on('reset',onReset);socket.on('disconnect',onDisconnect);
-  return()=>{socket.off('state',onState);socket.off('chat',onChat);socket.off('clap',onClap);socket.off('celebrate',onCelebrate);socket.off('reset',onReset);socket.off('disconnect',onDisconnect);socket.disconnect();timers.current.forEach(clearTimeout);musicRef.current?.close()};
+  return()=>{clearInterval(heartbeat);socket.off('connect',onConnect);socket.off('state',onState);socket.off('chat',onChat);socket.off('clap',onClap);socket.off('celebrate',onCelebrate);socket.off('reset',onReset);socket.off('disconnect',onDisconnect);socket.disconnect();timers.current.forEach(clearTimeout);musicRef.current?.close()};
  },[]);
  useEffect(()=>{if(chatOpen)chatBottom.current?.scrollIntoView({block:'nearest'})},[messages,chatOpen]);
  useEffect(()=>{
@@ -48,7 +55,7 @@ function App(){
   const interval=setInterval(()=>{const s=stateRef.current,p=s.players.find(p=>p.id===id);if(!p||s.phase!=='walking')return;const delta=[...keys].some(k=>['w','W','ArrowUp'].includes(k))?-.22:[...keys].some(k=>['s','S','ArrowDown'].includes(k))?.22:targetZ!==null&&Math.abs(targetZ-p.z)>.18?Math.sign(targetZ-p.z)*.22:0;if(delta)emit('move',{z:p.z+delta})},80);
   return()=>{clearInterval(interval);window.removeEventListener('keydown',down);window.removeEventListener('keyup',up);window.removeEventListener('blur',blur)};
  },[joined,role,id,targetZ]);
- const join=(entryRole='guest')=>{if(joining)return;setNotice('');unlockAudio().then(audio=>{if(audio&&!mutedRef.current&&socket.connected&&stateRef.current.players.some(p=>p.id===socket.id)){audio.setMuted(false);audio.startAmbient()}});setJoining(true);socket.connect();socket.timeout(8000).emit('join',{roomId,role:entryRole,gift},(err,res)=>{setJoining(false);if(err||!res?.ok){setNotice(err?'연결이 지연되고 있어요. 서버를 확인하고 다시 시도해 주세요.':res?.error||'입장하지 못했어요.');return}setId(res.id);setMessages(res.messages||[]);setJoined(true);if(!mutedRef.current){musicRef.current?.setMuted(false);musicRef.current?.startAmbient()}history.replaceState(null,'',`?room=${encodeURIComponent(roomId)}`)})};
+ const join=(entryRole='guest')=>{if(joining)return;setNotice('');unlockAudio().then(audio=>{if(audio&&!mutedRef.current&&socket.connected&&!!resumeRef.current){audio.setMuted(false);audio.startAmbient()}});setJoining(true);socket.connect();socket.timeout(8000).emit('join',{roomId,role:entryRole,gift,sessionToken:readSession(roomId)},(err,res)=>{setJoining(false);if(err||!res?.ok){setNotice(err?'연결이 지연되고 있어요. 서버를 확인하고 다시 시도해 주세요.':res?.error||'입장하지 못했어요.');return}setId(res.id);setMessages(res.messages||[]);resumeRef.current={roomId,sessionToken:res.sessionToken};saveSession(roomId,res.sessionToken);if(res.state){stateRef.current=res.state;setState(res.state);if(res.state.phase==='celebration')playBirthday()}setJoined(true);if(!mutedRef.current){musicRef.current?.setMuted(false);musicRef.current?.startAmbient()}history.replaceState(null,'',`?room=${encodeURIComponent(roomId)}`)})};
  const action=(event,payload={},success='')=>{if(DEMO){emit(event,payload);if(success)setNotice(success);return}if(busy)return;setBusy(true);socket.timeout(5000).emit(event,payload,(err,res)=>{setBusy(false);setNotice(err?'연결이 지연되고 있어요. 다시 시도해 주세요.':res?.error||success)})};
  const share=async()=>{if(DEMO){setNotice('주인공 체험 화면이에요. 실제 초대는 파티로 돌아간 뒤 해 주세요.');return}try{await navigator.clipboard.writeText(`${location.origin}${location.pathname}?room=${encodeURIComponent(roomId)}`);setNotice('초대 링크를 복사했어요. 친구에게 보내 주세요.')}catch{setNotice('주소창의 링크를 복사해서 친구에게 보내 주세요.')}};
  return <div className={'party-app '+(!joined?'is-entry':'')+(DEMO?' is-demo':'')}>

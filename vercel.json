@@ -4,8 +4,18 @@
   "installCommand": "npm ci",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "functions": { "api/socket-io.js": { "maxDuration": 300 } },
+  "functions": {
+    "api/socket-io.js": {
+      "maxDuration": 300
+    },
+    "api/realtime.js": {
+      "maxDuration": 300
+    }
+  },
   "rewrites": [
-    { "source": "/api/socket-io/:path*", "destination": "/api/socket-io" }
+    {
+      "source": "/api/socket-io/:path*",
+      "destination": "/api/socket-io"
+    }
   ]
 }

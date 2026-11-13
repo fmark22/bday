@@ -4,7 +4,7 @@ import CharacterStudio from './CharacterStudio.jsx';
 import React,{useEffect,useRef,useState,Suspense} from 'react';import{createRoot}from'react-dom/client';import{Canvas}from'@react-three/fiber';import{io}from'socket.io-client';import Palace from './Palace.jsx';import GiftIcon from './GiftIcon.jsx';import {GIFTS} from '../shared/gifts.js';import './style.css';
 const DEMO=new URLSearchParams(location.search).has('demo');
 const externalSocket=import.meta.env.VITE_SOCKET_URL;
-const socket=io(externalSocket||undefined,{autoConnect:false,transports:['websocket'],path:externalSocket||import.meta.env.DEV?'/socket.io':'/api/socket-io/socket.io'});
+const socket=io(externalSocket||undefined,{autoConnect:false,transports:['websocket'],path:externalSocket||import.meta.env.DEV?'/socket.io':'/api/realtime',addTrailingSlash:!!(externalSocket||import.meta.env.DEV)});
 function readSession(room){try{return sessionStorage.getItem('bday:session:'+room)||undefined}catch{return undefined}}
 function saveSession(room,token){try{sessionStorage.setItem('bday:session:'+room,token)}catch{}}
 class SceneBoundary extends React.Component{constructor(props){super(props);this.state={failed:false}}static getDerivedStateFromError(){return {failed:true}}componentDidCatch(error){console.error('3D scene could not load',error)}render(){return this.state.failed?<div className="render-error" role="alert"><p>왕궁을 불러오지 못했어요.</p><button onClick={()=>location.reload()}>다시 불러오기</button></div>:this.props.children}}

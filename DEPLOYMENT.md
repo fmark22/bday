@@ -23,8 +23,8 @@ Redis 비밀번호와 접속 URL은 서버에서만 사용합니다. `VITE_` 접
 | Build Command | `npm run build` |
 | Output Directory | `dist` |
 | Node.js | 22.x |
-| API | `api/socket-io.js` |
-| WebSocket 경로 | `/api/socket-io/socket.io` |
+| API | `api/realtime.js` (공유 서버: `api/socket-io.js`) |
+| WebSocket 경로 | `/api/realtime` (끝 슬래시 없음) |
 | 상태 확인 | `/api/socket-io/health` |
 
 Vercel Functions의 WebSocket 지원을 사용하며 클라이언트는 WebSocket 전송으로 연결합니다.

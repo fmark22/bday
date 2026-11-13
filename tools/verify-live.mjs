@@ -6,7 +6,7 @@ if(!supplied)throw Error('Usage: npm run test:live -- https://your-project.verce
 const url=new URL(supplied);if(url.protocol!=='https:')throw Error('Use the deployed HTTPS address');
 const origin=url.origin,roomId='verify-'+randomUUID().slice(0,20),clients=[];
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-function connect(){return new Promise((resolve,reject)=>{const socket=io(origin,{path:'/api/socket-io/socket.io',transports:['websocket'],forceNew:true,reconnection:false,timeout:12000,extraHeaders:{Origin:origin}});clients.push(socket);socket.once('connect',()=>resolve(socket));socket.once('connect_error',reject)})}
+function connect(){return new Promise((resolve,reject)=>{const socket=io(origin,{path:'/api/realtime',addTrailingSlash:false,transports:['websocket'],forceNew:true,reconnection:false,timeout:12000,extraHeaders:{Origin:origin}});clients.push(socket);socket.once('connect',()=>resolve(socket));socket.once('connect_error',reject)})}
 function send(socket,event,payload={}){return new Promise((resolve,reject)=>socket.timeout(12000).emit(event,payload,(err,res)=>err?reject(err):res?.error?reject(Error(res.error)):resolve(res)))}
 function state(socket,predicate){return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{socket.off('state',onState);reject(Error('Shared state timed out'))},12000);function onState(value){if(predicate(value)){clearTimeout(timer);socket.off('state',onState);resolve(value)}}socket.on('state',onState)})}
 try{
@@ -20,4 +20,4 @@ try{
  const crowned=state(guest,s=>s.phase==='celebration');await send(hero,'crown');await crowned;
  hero.disconnect();await pause(250);const renewed=await connect();const restored=await send(renewed,'join',{roomId,sessionToken:h.sessionToken});assert.equal(restored.id,h.id);assert.equal(restored.state.outfit.back,'cape');assert.equal(restored.state.phase,'celebration');
  console.log(`PASS: ${origin} — Redis health, two simultaneous clients, chat, gift, movement, seating, crown and reconnect recovery. Test room: ${roomId}`);
-}finally{clients.forEach(socket=>socket.disconnect())}
+}catch(error){console.error('FAIL:',error.description?.message||error.message);process.exitCode=1}finally{clients.forEach(socket=>socket.disconnect())}

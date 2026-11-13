@@ -7,7 +7,7 @@ import {io} from 'socket.io-client';
 const namespace='bday:integration:'+randomUUID(),origin='https://birthday-frontend.example.com',clients=[],servers=[];
 const redis=process.env.TEST_REDIS_URL;
 const shared=new MemoryRoomStore();
-function connect(url,from=origin,path='/socket.io'){return new Promise((resolve,reject)=>{const socket=io(url,{path,transports:['websocket'],forceNew:true,reconnection:false,timeout:2500,extraHeaders:{Origin:from}});clients.push(socket);socket.once('connect',()=>resolve(socket));socket.once('connect_error',reject)})}
+function connect(url,from=origin,path='/socket.io'){return new Promise((resolve,reject)=>{const socket=io(url,{path,addTrailingSlash:path!=='/api/realtime',transports:['websocket'],forceNew:true,reconnection:false,timeout:2500,extraHeaders:{Origin:from}});clients.push(socket);socket.once('connect',()=>resolve(socket));socket.once('connect_error',reject)})}
 function send(socket,event,payload={}){return new Promise((resolve,reject)=>socket.timeout(5000).emit(event,payload,(err,res)=>err?reject(err):resolve(res)))}
 function waitState(socket,predicate){return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{socket.off('state',onState);reject(Error('State synchronization timed out'))},5000);function onState(state){if(predicate(state)){clearTimeout(timer);socket.off('state',onState);resolve(state)}}socket.on('state',onState)})}
 try{
@@ -17,7 +17,7 @@ try{
  }
  const urls=servers.map(p=>`http://127.0.0.1:${p.http.address().port}`);
  assert.equal((await (await fetch(urls[0]+'/health')).json()).ok,true);
- const guest=await connect(urls[0]),hero=await connect(urls[1],origin,'/api/socket-io/socket.io');
+ const guest=await connect(urls[0]),hero=await connect(urls[1],origin,'/api/realtime');
  const g=await send(guest,'join',{roomId:'smoke',gift:'cape'});assert.equal(g.ok,true);const h=await send(hero,'join',{roomId:'smoke',role:'hero'});assert.equal(h.ok,true);
  const delivery=waitState(hero,s=>s.outfit.back==='cape');assert.equal((await send(guest,'giveGift')).ok,true);assert.equal((await delivery).players.length,2);
  const chat=waitState(hero,s=>s.messages.some(m=>m.text==='cross-instance hello'));assert.equal((await send(guest,'chat',{text:'cross-instance hello'})).ok,true);await chat;

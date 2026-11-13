@@ -9,8 +9,16 @@ export async function createPartyServer({store,env=process.env}={}){
  const origins=(env.CLIENT_ORIGIN||'').split(',').map(value=>value.trim().replace(/\/$/,'')).filter(Boolean);
  if(env.NODE_ENV==='production'&&env.VERCEL!=='1'&&!origins.length){await store.close();throw Error('CLIENT_ORIGIN must contain the deployed frontend origin')}
  const app=express(),http=createServer(app);
- const normalize=req=>{if(req.url?.startsWith('/api/socket-io/socket.io'))req.url=req.url.replace('/api/socket-io','')};
- http.prependListener('request',normalize);http.prependListener('upgrade',normalize);
+ const normalize=req=>{
+  const url=new URL(req.url||'/', 'http://localhost');
+  // Vercel routes an upgraded request to the function's base URL. Normalize
+  // before Engine.IO checks its own path, including the rewritten base path.
+  if(req.headers.upgrade?.toLowerCase()==='websocket'&&url.searchParams.get('transport')==='websocket'&&url.searchParams.has('EIO')){
+   req.url='/socket.io/'+url.search;
+  }else if(url.pathname.startsWith('/api/socket-io/socket.io')){
+   req.url=req.url.replace('/api/socket-io','');
+  }
+ };
  const io=new Server(http,{transports:['websocket'],maxHttpBufferSize:16384,
   cors:{origin:origins.length?origins:true},
   allowRequest:(req,done)=>{
@@ -21,6 +29,9 @@ export async function createPartyServer({store,env=process.env}={}){
    done(null,sameOrigin||origins.includes(origin)||(!origins.length&&env.NODE_ENV!=='production'));
   },
  });
+ // Register after attaching Socket.IO: Engine.IO wraps existing request
+ // listeners, so registering beforehand would normalize too late.
+ http.prependListener('request',normalize);http.prependListener('upgrade',normalize);
  const unsubscribe=store.subscribe(packet=>{
   io.to(packet.roomId).emit('state',packet.state);
   for(const effect of packet.effects||[])io.to(packet.roomId).emit(effect.event,effect.data);

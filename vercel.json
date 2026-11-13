@@ -14,6 +14,14 @@
   },
   "rewrites": [
     {
+      "source": "/api/socket-io/socket.io",
+      "destination": "/api/realtime"
+    },
+    {
+      "source": "/api/socket-io/socket.io/",
+      "destination": "/api/realtime"
+    },
+    {
       "source": "/api/socket-io/:path*",
       "destination": "/api/socket-io"
     }

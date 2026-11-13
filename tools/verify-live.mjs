@@ -10,7 +10,7 @@ function connect(){return new Promise((resolve,reject)=>{const socket=io(origin,
 function send(socket,event,payload={}){return new Promise((resolve,reject)=>socket.timeout(12000).emit(event,payload,(err,res)=>err?reject(err):res?.error?reject(Error(res.error)):resolve(res)))}
 function state(socket,predicate){return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{socket.off('state',onState);reject(Error('Shared state timed out'))},12000);function onState(value){if(predicate(value)){clearTimeout(timer);socket.off('state',onState);resolve(value)}}socket.on('state',onState)})}
 try{
- const health=await fetch(origin+'/api/socket-io/health',{signal:AbortSignal.timeout(15000)});assert.equal(health.status,200,'Health endpoint must be public');assert.equal((await health.json()).storage,'redis');
+ const health=await fetch(origin+'/api/socket-io/health',{signal:AbortSignal.timeout(15000)});if(new URL(health.url).origin!==origin||!health.headers.get('content-type')?.includes('application/json'))throw Error('Deployment is protected by Vercel authentication, or the realtime API is not deployed yet.');assert.equal(health.status,200,'Realtime health check failed');assert.equal((await health.json()).storage,'redis');
  const guest=await connect(),hero=await connect();const g=await send(guest,'join',{roomId,gift:'cape'}),h=await send(hero,'join',{roomId,role:'hero'});
  const present=state(hero,s=>s.outfit.back==='cape');await send(guest,'giveGift');await present;
  const message=state(hero,s=>s.messages.some(m=>m.text==='자동 배포 검증 중입니다.'));await send(guest,'chat',{text:'자동 배포 검증 중입니다.'});await message;
